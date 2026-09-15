@@ -89,6 +89,71 @@ This can speed up beat detection on slower computers but may result in lower qua
      </layout>
     </widget>
    </item>
+   <item row="4" column="0">
+    <widget class="QGroupBox" name="groupBoxBpmRange">
+     <property name="title">
+      <string>BPM Range</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayoutBpmRange">
+      <item>
+       <widget class="QCheckBox" name="checkBoxBpmRange">
+        <property name="toolTip">
+         <string>Only detect tempos within this range. Tempos outside of the range are doubled or halved.
+Use this if the analyzer detects half or double the tempo of many of your tracks, e.g. hardcore or drum and bass.
+The maximum is always at least double the minimum, so that every tempo fits into the range.</string>
+        </property>
+        <property name="text">
+         <string>Restrict detected BPM to range</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayoutBpmRange">
+        <item>
+         <widget class="QSpinBox" name="spinBoxBpmRangeMin">
+          <property name="toolTip">
+           <string>Lowest tempo that can be detected.</string>
+          </property>
+          <property name="suffix">
+           <string> BPM</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelBpmRangeTo">
+          <property name="text">
+           <string>to</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="spinBoxBpmRangeMax">
+          <property name="toolTip">
+           <string>Highest tempo that can be detected.</string>
+          </property>
+          <property name="suffix">
+           <string> BPM</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacerBpmRange">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item row="2" column="0">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
@@ -132,6 +197,9 @@ This can speed up beat detection on slower computers but may result in lower qua
   <tabstop>checkBoxFixedTempo</tabstop>
   <tabstop>checkBoxReanalyze</tabstop>
   <tabstop>checkBoxReanalyzeImported</tabstop>
+  <tabstop>checkBoxBpmRange</tabstop>
+  <tabstop>spinBoxBpmRangeMin</tabstop>
+  <tabstop>spinBoxBpmRangeMax</tabstop>
  </tabstops>
  <resources/>
  <connections/>

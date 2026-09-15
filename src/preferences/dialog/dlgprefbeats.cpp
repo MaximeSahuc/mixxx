@@ -3,6 +3,7 @@
 #include "analyzer/analyzerbeats.h"
 #include "defs_urls.h"
 #include "moc_dlgprefbeats.cpp"
+#include "util/math.h"
 
 DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
         : DlgPreferencePage(parent),
@@ -11,8 +12,17 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
           m_bFixedTempoEnabled(m_bpmSettings.getFixedTempoAssumptionDefault()),
           m_bFastAnalysisEnabled(m_bpmSettings.getFastAnalysisDefault()),
           m_bReanalyze(m_bpmSettings.getReanalyzeWhenSettingsChangeDefault()),
-          m_bReanalyzeImported(m_bpmSettings.getReanalyzeImportedDefault()) {
+          m_bReanalyzeImported(m_bpmSettings.getReanalyzeImportedDefault()),
+          m_bBpmRangeEnabled(m_bpmSettings.getBpmRangeEnabledDefault()),
+          m_bpmRangeMin(m_bpmSettings.getBpmRangeMinDefault()),
+          m_bpmRangeMax(m_bpmSettings.getBpmRangeMaxDefault()) {
     setupUi(this);
+
+    // The maximum is at least double the minimum, see slotBpmRangeMinChanged()
+    spinBoxBpmRangeMin->setRange(BeatDetectionSettings::kBpmRangeLowerLimit,
+            BeatDetectionSettings::kBpmRangeUpperLimit / 2);
+    spinBoxBpmRangeMax->setRange(BeatDetectionSettings::kBpmRangeLowerLimit * 2,
+            BeatDetectionSettings::kBpmRangeUpperLimit);
 
     m_availablePlugins = AnalyzerBeats::availablePlugins();
     for (const auto& info : std::as_const(m_availablePlugins)) {
@@ -66,8 +76,26 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
 #endif
             this,
             &DlgPrefBeats::slotReanalyzeImportedChanged);
+    connect(checkBoxBpmRange,
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+            &QCheckBox::checkStateChanged,
+#else
+            &QCheckBox::stateChanged,
+#endif
+            this,
+            &DlgPrefBeats::slotBpmRangeEnabledChanged);
+    connect(spinBoxBpmRangeMin,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this,
+            &DlgPrefBeats::slotBpmRangeMinChanged);
+    connect(spinBoxBpmRangeMax,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this,
+            &DlgPrefBeats::slotBpmRangeMaxChanged);
 
     setScrollSafeGuard(comboBoxBeatPlugin);
+    setScrollSafeGuard(spinBoxBpmRangeMin);
+    setScrollSafeGuard(spinBoxBpmRangeMax);
 }
 
 DlgPrefBeats::~DlgPrefBeats() {
@@ -84,6 +112,9 @@ void DlgPrefBeats::loadSettings() {
     m_bReanalyze =  m_bpmSettings.getReanalyzeWhenSettingsChange();
     m_bReanalyzeImported = m_bpmSettings.getReanalyzeImported();
     m_bFastAnalysisEnabled = m_bpmSettings.getFastAnalysis();
+    m_bBpmRangeEnabled = m_bpmSettings.getBpmRangeEnabled();
+    m_bpmRangeMin = m_bpmSettings.getBpmRangeMin();
+    m_bpmRangeMax = m_bpmSettings.getBpmRangeMax();
 
     slotUpdate();
 }
@@ -97,6 +128,9 @@ void DlgPrefBeats::slotResetToDefaults() {
     m_bFastAnalysisEnabled = m_bpmSettings.getFastAnalysisDefault();
     m_bReanalyze = m_bpmSettings.getReanalyzeWhenSettingsChangeDefault();
     m_bReanalyzeImported = m_bpmSettings.getReanalyzeImportedDefault();
+    m_bBpmRangeEnabled = m_bpmSettings.getBpmRangeEnabledDefault();
+    m_bpmRangeMin = m_bpmSettings.getBpmRangeMinDefault();
+    m_bpmRangeMax = m_bpmSettings.getBpmRangeMaxDefault();
 
     slotUpdate();
 }
@@ -137,6 +171,9 @@ void DlgPrefBeats::slotUpdate() {
     checkBoxFastAnalysis->setEnabled(m_bAnalyzerEnabled && m_bFixedTempoEnabled);
     checkBoxReanalyze->setEnabled(m_bAnalyzerEnabled);
     checkBoxReanalyzeImported->setEnabled(m_bAnalyzerEnabled);
+    checkBoxBpmRange->setEnabled(m_bAnalyzerEnabled);
+    spinBoxBpmRangeMin->setEnabled(m_bAnalyzerEnabled && m_bBpmRangeEnabled);
+    spinBoxBpmRangeMax->setEnabled(m_bAnalyzerEnabled && m_bBpmRangeEnabled);
 
     if (!m_bAnalyzerEnabled) {
         return;
@@ -167,6 +204,33 @@ void DlgPrefBeats::slotUpdate() {
 
     checkBoxReanalyze->setChecked(m_bReanalyze);
     checkBoxReanalyzeImported->setChecked(m_bReanalyzeImported);
+    checkBoxBpmRange->setChecked(m_bBpmRangeEnabled);
+    spinBoxBpmRangeMin->setValue(m_bpmRangeMin);
+    spinBoxBpmRangeMax->setValue(m_bpmRangeMax);
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+void DlgPrefBeats::slotBpmRangeEnabledChanged(Qt::CheckState state) {
+    m_bBpmRangeEnabled = (state == Qt::Checked);
+#else
+void DlgPrefBeats::slotBpmRangeEnabledChanged(int value) {
+    m_bBpmRangeEnabled = static_cast<bool>(value);
+#endif
+    slotUpdate();
+}
+
+void DlgPrefBeats::slotBpmRangeMinChanged(int value) {
+    m_bpmRangeMin = value;
+    // The range must span at least one octave, so that every tempo
+    // can be doubled or halved into it.
+    m_bpmRangeMax = math_max(m_bpmRangeMax, 2 * m_bpmRangeMin);
+    slotUpdate();
+}
+
+void DlgPrefBeats::slotBpmRangeMaxChanged(int value) {
+    m_bpmRangeMax = value;
+    m_bpmRangeMin = math_min(m_bpmRangeMin, m_bpmRangeMax / 2);
+    slotUpdate();
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
@@ -206,4 +270,7 @@ void DlgPrefBeats::slotApply() {
     m_bpmSettings.setReanalyzeWhenSettingsChange(m_bReanalyze);
     m_bpmSettings.setReanalyzeImported(m_bReanalyzeImported);
     m_bpmSettings.setFastAnalysis(m_bFastAnalysisEnabled);
+    m_bpmSettings.setBpmRangeEnabled(m_bBpmRangeEnabled);
+    m_bpmSettings.setBpmRangeMin(m_bpmRangeMin);
+    m_bpmSettings.setBpmRangeMax(m_bpmRangeMax);
 }

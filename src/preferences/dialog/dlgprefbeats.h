@@ -33,13 +33,17 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     void fastAnalysisEnabled(Qt::CheckState state);
     void slotReanalyzeChanged(Qt::CheckState state);
     void slotReanalyzeImportedChanged(Qt::CheckState state);
+    void slotBpmRangeEnabledChanged(Qt::CheckState state);
 #else
     void analyzerEnabled(int i);
     void fixedtempoEnabled(int i);
     void fastAnalysisEnabled(int i);
     void slotReanalyzeChanged(int value);
     void slotReanalyzeImportedChanged(int value);
+    void slotBpmRangeEnabledChanged(int value);
 #endif
+    void slotBpmRangeMinChanged(int value);
+    void slotBpmRangeMaxChanged(int value);
 
   private:
     void loadSettings();
@@ -52,4 +56,7 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     bool m_bFastAnalysisEnabled;
     bool m_bReanalyze;
     bool m_bReanalyzeImported;
+    bool m_bBpmRangeEnabled;
+    int m_bpmRangeMin;
+    int m_bpmRangeMax;
 };
