@@ -108,3 +108,63 @@ index 879f8a8..7d62253 100644
  }
 +
 
+[1mdiff --git a/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.cpp b/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.cpp[m
+[1mindex 72812b2..ad9aa62 100644[m
+[1m--- a/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.cpp[m
+[1m+++ b/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.cpp[m
+[36m@@ -102,7 +102,8 @@[m [mvoid[m
+ TempoTrackV2::calculateBeatPeriod(const vector<double> &df,[m
+                                   vector<double> &beat_period,[m
+                                   vector<double> &tempi,[m
+[31m-                                  double inputtempo, bool constraintempo)[m
+[32m+[m[32m                                  double inputtempo, bool constraintempo,[m
+[32m+[m[32m                                  double mintempo, double maxtempo)[m
+ {[m
+     // to follow matlab.. split into 512 sample frames with a 128 hop size[m
+     // calculate the acf,[m
+[36m@@ -139,6 +140,21 @@[m [mTempoTrackV2::calculateBeatPeriod(const vector<double> &df,[m
+         }[m
+     }[m
+ [m
+[32m+[m[32m    // Mixxx: Remove all beat periods outside of the tempo range from the[m
+[32m+[m[32m    // weighting curve, so they can't be selected. A beat period of i df[m
+[32m+[m[32m    // increments stands for all tempi between the periods i - 0.5 and i + 0.5,[m
+[32m+[m[32m    // to not lose a tempo near the range border due to the coarse resolution.[m
+[32m+[m[32m    if (mintempo > 0. && maxtempo > mintempo) {[m
+[32m+[m[32m        const double dfIncrementsPerMinute = 60. * m_rate / m_increment;[m
+[32m+[m[32m        for (int i = 0; i < wv_len; i++) {[m
+[32m+[m[32m            if (i < 1 ||[m
+[32m+[m[32m                    dfIncrementsPerMinute / (i - 0.5) < mintempo ||[m
+[32m+[m[32m                    dfIncrementsPerMinute / (i + 0.5) > maxtempo) {[m
+[32m+[m[32m                wv[i] = 0.;[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m
+     // beat tracking frame size (roughly 6 seconds) and hop (1.5 seconds)[m
+     int winlen = 512;[m
+     int step = 128;[m
+[1mdiff --git a/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.h b/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.h[m
+[1mindex accbb9e..211f9a0 100644[m
+[1m--- a/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.h[m
+[1m+++ b/lib/qm-dsp/dsp/tempotracking/TempoTrackV2.h[m
+[36m@@ -50,7 +50,18 @@[m [mpublic:[m
+     void calculateBeatPeriod(const std::vector<double> &df,[m
+                              std::vector<double> &beatPeriod,[m
+                              std::vector<double> &tempi,[m
+[31m-                             double inputtempo, bool constraintempo);[m
+[32m+[m[32m                             double inputtempo, bool constraintempo) {[m
+[32m+[m[32m        calculateBeatPeriod(df, beatPeriod, tempi, inputtempo, constraintempo, 0.0, 0.0);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // Returned beat periods are given in df increment units; inputtempo and tempi in bpm[m
+[32m+[m[32m    // Mixxx: Restrict the beat periods to the tempo range [mintempo, maxtempo] in bpm.[m
+[32m+[m[32m    // The range is ignored if mintempo <= 0 or maxtempo <= mintempo.[m
+[32m+[m[32m    void calculateBeatPeriod(const std::vector<double> &df,[m
+[32m+[m[32m                             std::vector<double> &beatPeriod,[m
+[32m+[m[32m                             std::vector<double> &tempi,[m
+[32m+[m[32m                             double inputtempo, bool constraintempo,[m
+[32m+[m[32m                             double mintempo, double maxtempo);[m
+ [m
+     // Returned beat positions are given in df increment units[m
+     void calculateBeats(const std::vector<double> &df,[m

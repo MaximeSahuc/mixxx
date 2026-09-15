@@ -50,7 +50,18 @@ public:
     void calculateBeatPeriod(const std::vector<double> &df,
                              std::vector<double> &beatPeriod,
                              std::vector<double> &tempi,
-                             double inputtempo, bool constraintempo);
+                             double inputtempo, bool constraintempo) {
+        calculateBeatPeriod(df, beatPeriod, tempi, inputtempo, constraintempo, 0.0, 0.0);
+    }
+
+    // Returned beat periods are given in df increment units; inputtempo and tempi in bpm
+    // Mixxx: Restrict the beat periods to the tempo range [mintempo, maxtempo] in bpm.
+    // The range is ignored if mintempo <= 0 or maxtempo <= mintempo.
+    void calculateBeatPeriod(const std::vector<double> &df,
+                             std::vector<double> &beatPeriod,
+                             std::vector<double> &tempi,
+                             double inputtempo, bool constraintempo,
+                             double mintempo, double maxtempo);
 
     // Returned beat positions are given in df increment units
     void calculateBeats(const std::vector<double> &df,

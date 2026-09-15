@@ -102,7 +102,8 @@ void
 TempoTrackV2::calculateBeatPeriod(const vector<double> &df,
                                   vector<double> &beat_period,
                                   vector<double> &tempi,
-                                  double inputtempo, bool constraintempo)
+                                  double inputtempo, bool constraintempo,
+                                  double mintempo, double maxtempo)
 {
     // to follow matlab.. split into 512 sample frames with a 128 hop size
     // calculate the acf,
@@ -136,6 +137,21 @@ TempoTrackV2::calculateBeatPeriod(const vector<double> &df,
             // MEPD 28/11/12
             // standard rayleigh weighting over periodicities
             wv[i] = (double(i) / pow(rayparam,2.)) * exp((-1.*pow(-double(i),2.)) / (2.*pow(rayparam,2.)));
+        }
+    }
+
+    // Mixxx: Remove all beat periods outside of the tempo range from the
+    // weighting curve, so they can't be selected. A beat period of i df
+    // increments stands for all tempi between the periods i - 0.5 and i + 0.5,
+    // to not lose a tempo near the range border due to the coarse resolution.
+    if (mintempo > 0. && maxtempo > mintempo) {
+        const double dfIncrementsPerMinute = 60. * m_rate / m_increment;
+        for (int i = 0; i < wv_len; i++) {
+            if (i < 1 ||
+                    dfIncrementsPerMinute / (i - 0.5) < mintempo ||
+                    dfIncrementsPerMinute / (i + 0.5) > maxtempo) {
+                wv[i] = 0.;
+            }
         }
     }
 
