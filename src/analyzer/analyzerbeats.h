@@ -19,6 +19,15 @@ class AnalyzerBeats : public Analyzer {
     static QList<mixxx::AnalyzerPluginInfo> availablePlugins();
     static mixxx::AnalyzerPluginInfo defaultPlugin();
 
+    /// Doubles or halves the beats until their BPM is within the range
+    /// [minBpm, maxBpm], which must span at least one octave. Returns the
+    /// beats unchanged if they are within the range or can't be scaled.
+    static mixxx::BeatsPointer scaleBeatsIntoBpmRange(
+            mixxx::BeatsPointer pBeats,
+            mixxx::audio::FramePos trackEndPosition,
+            mixxx::Bpm minBpm,
+            mixxx::Bpm maxBpm);
+
     bool initialize(const AnalyzerTrack& track,
             mixxx::audio::SampleRate sampleRate,
             SINT frameLength) override;
@@ -29,7 +38,10 @@ class AnalyzerBeats : public Analyzer {
   private:
     bool shouldAnalyze(TrackPointer pTrack) const;
     static QHash<QString, QString> getExtraVersionInfo(
-            const QString& pluginId, bool bPreferencesFastAnalysis);
+            const QString& pluginId,
+            bool bPreferencesFastAnalysis,
+            mixxx::Bpm minBpm,
+            mixxx::Bpm maxBpm);
 
     BeatDetectionSettings m_bpmSettings;
     std::unique_ptr<mixxx::AnalyzerBeatsPlugin> m_pPlugin;
@@ -39,6 +51,9 @@ class AnalyzerBeats : public Analyzer {
     bool m_bPreferencesReanalyzeImported;
     bool m_bPreferencesFixedTempo;
     bool m_bPreferencesFastAnalysis;
+    // Both invalid if the BPM range is disabled
+    mixxx::Bpm m_minBpm;
+    mixxx::Bpm m_maxBpm;
 
     mixxx::audio::SampleRate m_sampleRate;
     SINT m_maxFramesToProcess;

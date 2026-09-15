@@ -23,7 +23,9 @@ class AnalyzerQueenMaryBeats : public AnalyzerBeatsPlugin {
                 true);
     }
 
-    AnalyzerQueenMaryBeats();
+    /// If both minBpm and maxBpm are valid, only tempos within this range
+    /// are detected.
+    explicit AnalyzerQueenMaryBeats(Bpm minBpm = Bpm(), Bpm maxBpm = Bpm());
     ~AnalyzerQueenMaryBeats() override;
 
     AnalyzerPluginInfo info() const override {
@@ -43,6 +45,8 @@ class AnalyzerQueenMaryBeats : public AnalyzerBeatsPlugin {
     }
 
   private:
+    const Bpm m_minBpm;
+    const Bpm m_maxBpm;
     std::unique_ptr<DetectionFunction> m_pDetectionFunction;
     DownmixAndOverlapHelper m_helper;
     mixxx::audio::SampleRate m_sampleRate;

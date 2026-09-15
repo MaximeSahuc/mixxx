@@ -65,6 +65,18 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
     m_bPreferencesReanalyzeOldBpm = m_bpmSettings.getReanalyzeWhenSettingsChange();
     m_bPreferencesReanalyzeImported = m_bpmSettings.getReanalyzeImported();
     m_bPreferencesFastAnalysis = m_bpmSettings.getFastAnalysis();
+    m_minBpm = mixxx::Bpm();
+    m_maxBpm = mixxx::Bpm();
+    if (m_bpmSettings.getBpmRangeEnabled()) {
+        const int minBpm = m_bpmSettings.getBpmRangeMin();
+        const int maxBpm = m_bpmSettings.getBpmRangeMax();
+        if (BeatDetectionSettings::isValidBpmRange(minBpm, maxBpm)) {
+            m_minBpm = mixxx::Bpm(minBpm);
+            m_maxBpm = mixxx::Bpm(maxBpm);
+        } else {
+            qWarning() << "Ignoring invalid BPM range" << minBpm << "-" << maxBpm;
+        }
+    }
 
     const auto plugins = availablePlugins();
     if (!plugins.isEmpty()) {
@@ -83,7 +95,8 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
              << "\nFixed tempo assumption:" << m_bPreferencesFixedTempo
              << "\nRe-analyze when settings change:" << m_bPreferencesReanalyzeOldBpm
              << "\nRe-analyze imported from other software:" << m_bPreferencesReanalyzeImported
-             << "\nFast analysis:" << m_bPreferencesFastAnalysis;
+             << "\nFast analysis:" << m_bPreferencesFastAnalysis
+             << "\nBPM range:" << m_minBpm << "-" << m_maxBpm;
 
     m_sampleRate = sampleRate;
     // In fast analysis mode, skip processing after
@@ -102,7 +115,8 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
     DEBUG_ASSERT(!m_pPlugin);
     if (bShouldAnalyze) {
         if (m_pluginId == mixxx::AnalyzerQueenMaryBeats::pluginInfo().id()) {
-            m_pPlugin = std::make_unique<mixxx::AnalyzerQueenMaryBeats>();
+            m_pPlugin = std::make_unique<mixxx::AnalyzerQueenMaryBeats>(
+                    m_minBpm, m_maxBpm);
         } else if (m_pluginId == mixxx::AnalyzerSoundTouchBeats::pluginInfo().id()) {
             m_pPlugin = std::make_unique<mixxx::AnalyzerSoundTouchBeats>();
         } else {
@@ -172,7 +186,9 @@ bool AnalyzerBeats::shouldAnalyze(TrackPointer pTrack) const {
     QString version = pBeats->getVersion();
     QHash<QString, QString> extraVersionInfo = getExtraVersionInfo(
             pluginID,
-            m_bPreferencesFastAnalysis);
+            m_bPreferencesFastAnalysis,
+            m_minBpm,
+            m_maxBpm);
     QString newVersion = BeatFactory::getPreferredVersion(
             m_bPreferencesFixedTempo);
     QString newSubVersion = BeatFactory::getPreferredSubVersion(
@@ -225,7 +241,7 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
     if (m_pPlugin->supportsBeatTracking()) {
         QVector<mixxx::audio::FramePos> beats = m_pPlugin->getBeats();
         QHash<QString, QString> extraVersionInfo = getExtraVersionInfo(
-                m_pluginId, m_bPreferencesFastAnalysis);
+                m_pluginId, m_bPreferencesFastAnalysis, m_minBpm, m_maxBpm);
         pBeats = BeatFactory::makePreferredBeats(
                 beats,
                 extraVersionInfo,
@@ -245,16 +261,69 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
         pBeats = mixxx::Beats::fromConstTempo(m_sampleRate, mixxx::audio::kStartFramePos, bpm);
     }
 
+    if (pBeats && m_minBpm.isValid() && m_maxBpm.isValid()) {
+        // The Queen Mary plugin already detects only tempos within the range,
+        // but the final BPM of the beat grid may still be slightly outside.
+        pBeats = scaleBeatsIntoBpmRange(pBeats,
+                mixxx::audio::FramePos{
+                        pTrack->getDuration() * pBeats->getSampleRate()},
+                m_minBpm,
+                m_maxBpm);
+    }
+
     pTrack->trySetBeats(pBeats);
 }
 
 // static
+mixxx::BeatsPointer AnalyzerBeats::scaleBeatsIntoBpmRange(
+        mixxx::BeatsPointer pBeats,
+        mixxx::audio::FramePos trackEndPosition,
+        mixxx::Bpm minBpm,
+        mixxx::Bpm maxBpm) {
+    VERIFY_OR_DEBUG_ASSERT(pBeats && minBpm.isValid() && maxBpm.isValid() &&
+            !(maxBpm < minBpm * 2)) {
+        return pBeats;
+    }
+    // A few octaves are enough for any plausible tempo, the limit only
+    // protects against an endless loop.
+    constexpr int kMaxOctaves = 4;
+    for (int i = 0; i < kMaxOctaves; ++i) {
+        const mixxx::Bpm bpm = pBeats->getBpmInRange(
+                mixxx::audio::kStartFramePos, trackEndPosition);
+        std::optional<mixxx::BeatsPointer> pScaledBeats;
+        if (!bpm.isValid()) {
+            break;
+        } else if (bpm < minBpm) {
+            pScaledBeats = pBeats->tryScale(mixxx::Beats::BpmScale::Double);
+        } else if (bpm > maxBpm) {
+            pScaledBeats = pBeats->tryScale(mixxx::Beats::BpmScale::Halve);
+        } else {
+            break;
+        }
+        if (!pScaledBeats || !*pScaledBeats) {
+            break;
+        }
+        qDebug() << "Scaled beats with BPM" << bpm << "into BPM range"
+                 << minBpm << "-" << maxBpm;
+        pBeats = *pScaledBeats;
+    }
+    return pBeats;
+}
+
+// static
 QHash<QString, QString> AnalyzerBeats::getExtraVersionInfo(
-        const QString& pluginId, bool bPreferencesFastAnalysis) {
+        const QString& pluginId,
+        bool bPreferencesFastAnalysis,
+        mixxx::Bpm minBpm,
+        mixxx::Bpm maxBpm) {
     QHash<QString, QString> extraVersionInfo;
     extraVersionInfo["vamp_plugin_id"] = pluginId;
     if (bPreferencesFastAnalysis) {
         extraVersionInfo["fast_analysis"] = "1";
+    }
+    if (minBpm.isValid() && maxBpm.isValid()) {
+        extraVersionInfo["bpm_range"] = QString::number(minBpm.value()) +
+                QStringLiteral("-") + QString::number(maxBpm.value());
     }
     return extraVersionInfo;
 }

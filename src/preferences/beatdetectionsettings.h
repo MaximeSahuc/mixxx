@@ -17,10 +17,26 @@
 #define BPM_REANALYZE_WHEN_SETTINGS_CHANGE "ReanalyzeWhenSettingsChange"
 #define BPM_REANALYZE_IMPORTED "ReanalyzeImported"
 #define BPM_FAST_ANALYSIS_ENABLED "FastAnalysisEnabled"
+#define BPM_RANGE_ENABLED "BpmRangeEnabled"
+#define BPM_RANGE_MIN "BpmRangeMin"
+#define BPM_RANGE_MAX "BpmRangeMax"
 
 class BeatDetectionSettings {
   public:
+    // Limits for the BPM range. The Queen Mary tempo tracker can't detect
+    // tempos outside of ~48 to ~258 BPM.
+    static constexpr int kBpmRangeLowerLimit = 50;
+    static constexpr int kBpmRangeUpperLimit = 260;
+
     BeatDetectionSettings(UserSettingsPointer pConfig) : m_pConfig(pConfig) {}
+
+    /// The BPM range must span at least one octave, so that every tempo
+    /// outside of the range can be doubled or halved into it.
+    static bool isValidBpmRange(int minBpm, int maxBpm) {
+        return minBpm >= kBpmRangeLowerLimit &&
+                maxBpm <= kBpmRangeUpperLimit &&
+                maxBpm >= 2 * minBpm;
+    }
 
     DEFINE_PREFERENCE_HELPERS(BpmDetectionEnabled, bool,
                               BPM_CONFIG_KEY, BPM_DETECTION_ENABLED, true);
@@ -39,6 +55,24 @@ class BeatDetectionSettings {
 
     DEFINE_PREFERENCE_HELPERS(FastAnalysis, bool,
                               BPM_CONFIG_KEY, BPM_FAST_ANALYSIS_ENABLED, false);
+
+    DEFINE_PREFERENCE_HELPERS(BpmRangeEnabled,
+            bool,
+            BPM_CONFIG_KEY,
+            BPM_RANGE_ENABLED,
+            false);
+
+    DEFINE_PREFERENCE_HELPERS(BpmRangeMin,
+            int,
+            BPM_CONFIG_KEY,
+            BPM_RANGE_MIN,
+            90);
+
+    DEFINE_PREFERENCE_HELPERS(BpmRangeMax,
+            int,
+            BPM_CONFIG_KEY,
+            BPM_RANGE_MAX,
+            180);
 
     QString getBeatPluginId() const {
         return m_pConfig->getValue<QString>(ConfigKey(

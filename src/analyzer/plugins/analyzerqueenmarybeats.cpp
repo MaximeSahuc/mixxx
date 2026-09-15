@@ -1,6 +1,8 @@
 #include <dsp/onsets/DetectionFunction.h>
 #include <dsp/tempotracking/TempoTrackV2.h>
 
+#include <cmath>
+
 // Class header comes after library includes here since our preprocessor
 // definitions interfere with qm-dsp's headers.
 #include "analyzer/plugins/analyzerqueenmarybeats.h"
@@ -38,8 +40,10 @@ DFConfig makeDetectionFunctionConfig(int stepSizeFrames, int windowSize) {
 
 } // namespace
 
-AnalyzerQueenMaryBeats::AnalyzerQueenMaryBeats()
-        : m_windowSize(0),
+AnalyzerQueenMaryBeats::AnalyzerQueenMaryBeats(Bpm minBpm, Bpm maxBpm)
+        : m_minBpm(minBpm),
+          m_maxBpm(maxBpm),
+          m_windowSize(0),
           m_stepSizeFrames(0) {
 }
 
@@ -97,7 +101,22 @@ bool AnalyzerQueenMaryBeats::finalize() {
     }
 
     TempoTrackV2 tt(m_sampleRate, m_stepSizeFrames);
-    tt.calculateBeatPeriod(df, beatPeriod, tempi);
+    if (m_minBpm.isValid() && m_maxBpm.isValid()) {
+        // The weighting of the beat periods prefers tempos around the input
+        // tempo, 120 BPM by default. Centering it in the range makes the
+        // weighting almost flat within the range. Otherwise tempos near the
+        // border closer to 120 BPM are preferred, e.g. 2/3 of the actual tempo.
+        const double inputTempo = std::sqrt(m_minBpm.value() * m_maxBpm.value());
+        tt.calculateBeatPeriod(df,
+                beatPeriod,
+                tempi,
+                inputTempo,
+                false,
+                m_minBpm.value(),
+                m_maxBpm.value());
+    } else {
+        tt.calculateBeatPeriod(df, beatPeriod, tempi);
+    }
 
     std::vector<double> beats;
     tt.calculateBeats(df, beatPeriod, beats);
