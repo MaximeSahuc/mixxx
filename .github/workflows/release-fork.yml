@@ -1,0 +1,225 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+
+# Fork-only release pipeline: builds the .deb (Ubuntu 22.04) and the Windows
+# installer (.msi) from the pushed tag / selected ref and attaches them to a
+# GitHub Release. Derived from build.yml, restricted to Ubuntu + Windows and
+# without any upstream infrastructure (signing, downloads.mixxx.org, PPA, ...).
+#
+# Usage: git tag bpm-range-1 && git push fork bpm-range-1
+
+name: Release (fork)
+
+on:
+  push:
+    tags:
+      - "bpm-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/update (e.g. bpm-range-1)"
+        type: string
+        required: true
+      run_tests:
+        description: "Run ctest before packaging"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # to create the release and upload assets
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  create-release:
+    name: "Create GitHub release"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Create release if missing"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "Mixxx (BPM range) ${RELEASE_TAG}" \
+              --notes "Mixxx built from ${GITHUB_SHA} with the configurable beat-detection BPM range."
+          fi
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 22.04
+            os: ubuntu-22.04
+            cmake_args: >-
+              -DQT6=ON
+              -DQML=ON
+              -DBULK=ON
+              -DFFMPEG=ON
+              -DLOCALECOMPARE=ON
+              -DMAD=ON
+              -DMODPLUG=ON
+              -DWAVPACK=ON
+              -DINSTALL_USER_UDEV_RULES=OFF
+            compiler_cache: ccache
+            compiler_cache_path: /home/runner/.cache/ccache
+            compiler_cache_id: qt6
+            cpack_generator: DEB
+            buildenv_basepath: /home/runner/buildenv
+            buildenv_script: tools/debian_buildenv.sh
+            artifacts_path: build/*.deb
+            qt_qpa_platform: offscreen
+          - name: Windows 2022 (MSVC)
+            os: windows-2022
+            # Keep in sync with build.yml / tools/windows_buildenv.bat
+            cmake_args: >-
+              -DBULK=ON
+              -DFFMPEG=OFF
+              -DHSS1394=ON
+              -DLOCALECOMPARE=ON
+              -DMAD=ON
+              -DMEDIAFOUNDATION=ON
+              -DMODPLUG=ON
+              -DQT6=ON
+              -DWAVPACK=ON
+              -DVCPKG_TARGET_TRIPLET=x64-windows-release
+            cc: cl
+            cxx: cl
+            cpack_generator: WIX
+            buildenv_basepath: C:\buildenv
+            buildenv_script: tools/windows_buildenv.bat
+            artifacts_path: build/*.msi
+            qt_qpa_platform: windows
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@v7
+        with:
+          # This is necessary for making `git describe` work.
+          fetch-depth: 0
+
+      - name: "Ensure that all tags are fetched"
+        run: git fetch origin --force --tags
+
+      - name: "[Windows] Set up cmake"
+        uses: jwlawson/actions-setup-cmake@v2.2
+        if: runner.os == 'Windows'
+        with:
+          cmake-version: "3.21.x"
+
+      - name: "[Windows] Set up MSVC Developer Command Prompt"
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: "[Windows] Get build environment name"
+        if: runner.os == 'Windows'
+        run: ${{ matrix.buildenv_script }} name
+
+      - name: "[Linux] Set up build environment"
+        if: runner.os == 'Linux'
+        run: ${{ matrix.buildenv_script }} setup
+        env:
+          BUILDENV_BASEPATH: ${{ matrix.buildenv_basepath }}
+
+      - name: "[Windows] Set up build environment"
+        if: runner.os == 'Windows'
+        # With the cmd shell the ERRORLEVEL is checked
+        shell: cmd
+        run: ${{ matrix.buildenv_script }} setup
+        env:
+          BUILDENV_BASEPATH: ${{ matrix.buildenv_basepath }}
+          BUILDENV_RELEASE: TRUE
+
+      - name: "[Linux] Set up GitHub cache for ccache"
+        if: runner.os == 'Linux'
+        uses: actions/cache@v6
+        with:
+          path: ${{ matrix.compiler_cache_path }}
+          key: ${{ matrix.os }}-${{ matrix.compiler_cache_id }}-fork-${{ github.run_number }}
+          restore-keys: |
+            ${{ matrix.os }}-${{ matrix.compiler_cache_id }}-fork
+            ${{ matrix.os }}-${{ matrix.compiler_cache_id }}
+
+      - name: "[Linux] Set up ccache"
+        if: runner.os == 'Linux'
+        run: |
+          ${{ matrix.compiler_cache }} --zero-stats
+          ${{ matrix.compiler_cache }} --max-size=2G
+
+      - name: "Create build directory"
+        run: mkdir build
+
+      - name: "Configure"
+        run: >-
+          cmake ${{ matrix.cmake_args }}
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_PREFIX_PATH="${{ env.CMAKE_PREFIX_PATH }}"
+          -DBATTERY=ON
+          -DBROADCAST=ON
+          -DDOWNLOAD_MANUAL=ON
+          -DHID=ON
+          -DKEYFINDER=ON
+          -DLILV=ON
+          -DOPUS=ON
+          -DQTKEYCHAIN=ON
+          -DVINYLCONTROL=ON
+          -DCMAKE_VERBOSE_MAKEFILE=OFF
+          -L
+          ..
+        working-directory: build
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+
+      - name: "Build"
+        run: cmake --build . --config RelWithDebInfo
+        working-directory: build
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          CCACHE_NOCOMPRESS: true
+
+      - name: "[Linux] Print compiler cache stats"
+        if: runner.os == 'Linux'
+        run: |
+          ${{ matrix.compiler_cache }} --show-stats
+          ${{ matrix.compiler_cache }} --cleanup
+
+      - name: "Test"
+        if: inputs.run_tests
+        run: ctest --timeout 45
+        working-directory: build
+        env:
+          QT_QPA_PLATFORM: ${{ matrix.qt_qpa_platform }}
+          GTEST_COLOR: 1
+          CTEST_PARALLEL_LEVEL: 1
+          CTEST_OUTPUT_ON_FAILURE: 1
+
+      - name: "Package"
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 1
+          command: |
+            cd build
+            cpack -G ${{ matrix.cpack_generator }} -V
+
+      - name: "Upload to GitHub release"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=( ${{ matrix.artifacts_path }} )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No package found for ${{ matrix.artifacts_path }}" >&2
+            exit 1
+          fi
+          gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
